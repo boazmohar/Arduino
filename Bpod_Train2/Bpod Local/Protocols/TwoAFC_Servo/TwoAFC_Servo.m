@@ -116,7 +116,7 @@ io.RightWater = {'WireState',2^0};
 io.LeftWater  = {'WireState',2^1};
 io.WaterOff = {'WireState',0};
 io.Pole = {'BNCState',2^0};
-io.Cue = {'ValveState',2^3};
+io.Cue = {'PWM3',256};
 
 
 
@@ -352,8 +352,8 @@ switch action
         inds40 = max(1, Ntrials-40+1):Ntrials;
         hitpctrecent = 100.*sum(hit(inds40))./numel(inds40);
         
-        left  = (BpodSystem.Data.TrialTypes==0);
-        right = (BpodSystem.Data.TrialTypes==1);
+        left  = (BpodSystem.Data.TrialTypes==1);
+        right = (BpodSystem.Data.TrialTypes==0);
         
         hitpctleft = 100.*sum(left&hit)./sum(left);
         hitpctright = 100.*sum(right&hit)./sum(right);
