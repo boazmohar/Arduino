@@ -24,7 +24,7 @@ const int servoPinMask = 12; // Servo that masks the sound - both have to be the
 
 // timing
 unsigned long startTBeep;
-const unsigned long beepDur=500000; 
+const unsigned long beepDur=300000; 
 
 //Servos
 String servoType = "HS81"; // Hi-Tec micro servo 
