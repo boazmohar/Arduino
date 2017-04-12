@@ -36,7 +36,7 @@ global BpodSystem S;
 S = BpodSystem.ProtocolSettings; % Load settings chosen in launch manager into current workspace as a struct called S
 if isempty(fieldnames(S))  % If settings file was an empty struct, populate struct with default settings
     
-    S.GUI.WaterValveTime = 0.3;        % in sec
+    S.GUI.WaterValveTime = 4;        % in ul
     S.GUI.PreSamplePeriod = 0.1;        % in sec
     S.GUI.SamplePeriod = 0.7;           % in sec
     S.GUI.DelayPeriod = 0.1;            % in sec
@@ -78,7 +78,7 @@ TrialTypes = [];
 BpodSystem.Data.TrialTypes = []; % The trial type of each trial completed will be added here.
 
 %% Initialize plots
-BpodSystem.ProtocolFigures.YesNoPerfOutcomePlotFig = figure('Position', [200 100 1400 200],'name','Outcome plot','numbertitle','off', 'MenuBar', 'none', 'Resize', 'off', 'Color', [1 1 1]);
+BpodSystem.ProtocolFigures.YesNoPerfOutcomePlotFig = figure('Position', [100 950 1400 200],'name','Outcome plot','numbertitle','off', 'MenuBar', 'none', 'Resize', 'off', 'Color', [1 1 1]);
 BpodSystem.GUIHandles.YesNoPerfOutcomePlot = axes('Position', [.2 .2 .75 .7]);
 
 uicontrol('Style', 'text', 'String', 'nDisplay: ','Position',[10 170 45 15], 'HorizontalAlignment', 'left', 'BackgroundColor', [1 1 1]);
@@ -112,14 +112,30 @@ HandlePauseCondition;
 
 
 % define outputs
-io.RightWater = {'WireState',2^0};
-io.LeftWater  = {'WireState',2^1};
-io.WaterOff = {'WireState',0};
+io.RightWater = {'ValveState',2^0};
+io.LeftWater  = {'ValveState',2^1};
+io.WaterOff = {'ValveState',0};
 io.Pole = {'BNCState',2^0};
 io.Cue = {'PWM3',256};
+global ServoSerial
+try
+    fclose(ServoSerial);
+    delete(ServoSerial);
+catch
+    try
+        delete(ServoSerial);
+    catch
+        clear ServoSerial;
+    end
+end
+ServoSerial=[];
 
-
-
+if isempty(ServoSerial)
+    ServoSerial = serial('COM3','BaudRate',115200);
+end
+if strcmp(get(ServoSerial, 'Status'), 'closed')
+    fopen(ServoSerial);
+end
 %% Main trial loop
 for currentTrial = 1:MaxTrials
     S = BpodParameterGUI('sync', S); % Sync parameters with BpodParameterGUI plugin
@@ -127,10 +143,18 @@ for currentTrial = 1:MaxTrials
     % select trials here
     disp(['Starting trial ',num2str(currentTrial)])
     TrialTypes(currentTrial) = trialSelection;        %0's (right) or 1's (left) 
+    if TrialTypes(currentTrial) == 0
+        fprintf(ServoSerial, '%c',2);
+    elseif  TrialTypes(currentTrial) == 1
+        fprintf(ServoSerial, '%c',1);
+    end
     YesNoPerfOutcomePlot(BpodSystem.GUIHandles.YesNoPerfOutcomePlot,currentTrial,'next_trial',TrialTypes(currentTrial), BpodSystem.GUIHandles.DisplayNTrials);
     
     % perhaps start sma and add bitcode at the top
-    
+    ValveTimes = GetValveTimes(S.GUI.WaterValveTime, [1 2]); 
+    LeftValveTime = ValveTimes(1); 
+    RightValveTime = ValveTimes(2);
+  
     % build state matrix depending on the protocol type
     sma = NewStateMatrix(); % Assemble state matrix
     switch S.GUI.TrialType
@@ -139,22 +163,25 @@ for currentTrial = 1:MaxTrials
                 'Timer', 30,...
                 'StateChangeConditions', {'Port1In', 'OpenvalveR', ... %lick right
                                           'Port2In', 'OpenvalveL', ... %lick left
-                                          'Tup', 'TrialEnd'},... % time out (30s)
+                                          'Tup', 'ConsumptionPeriod'},... % time out (30s)
                 'OutputActions', []);
             sma = AddState(sma, 'Name', 'OpenvalveL', ... 
-                'Timer', S.GUI.WaterValveTime,...
-                'StateChangeConditions', {'Tup', 'TrialEnd'},...
-                'OutputActions',  {'ValveState',2^3, ... %Cue sound
-                                   'WireState',2^1}); % open left port
+                'Timer', LeftValveTime,...
+                'StateChangeConditions', {'Tup', 'CloseValve'},...
+                'OutputActions', [ io.Cue io.LeftWater]); %Cue sound, open left port
             sma = AddState(sma, 'Name', 'OpenvalveR', ...
-                'Timer', S.GUI.WaterValveTime,...
-                'StateChangeConditions', {'Tup', 'TrialEnd'},...
-                'OutputActions', {'ValveState',2^3,... %Cue sound
-                                  'WireState',2^0}); % open left port
-            sma = AddState(sma, 'Name', 'TrialEnd', ...
-                'Timer', 0.05,...
-                'StateChangeConditions', {'Tup', 'exit'},...
+                'Timer', RightValveTime,...
+                'StateChangeConditions', {'Tup', 'CloseValve'},...
+                'OutputActions', [ io.Cue io.RightWater]); %Cue sound, open right port
+            sma = AddState(sma, 'Name', 'CloseValve', ...
+                'Timer', 0.005,...
+                'StateChangeConditions', {'Tup', 'ConsumptionPeriod'},...
                 'OutputActions', [io.WaterOff]);
+            
+            sma = AddState(sma, 'Name', 'ConsumptionPeriod', ...
+                'Timer', S.GUI.ConsumptionPeriod,...
+                'StateChangeConditions', {'Tup', 'exit'}, ...
+                'OutputActions', {});
         case 2          % yes_no_Servo
 
             % Determine trial-specific state matrix fields
@@ -163,10 +190,12 @@ for currentTrial = 1:MaxTrials
                    action.lickleft = 'Reward';
                    action.lickright = 'ExtraITI';
                    io.Reward = io.LeftWater;
+                   io.ValveTime = LeftValveTime;
                 case 0  % lick right
                    action.lickleft = 'ExtraITI';
                    action.lickright = 'Reward';
                    io.Reward = io.RightWater;
+                   io.ValveTime = RightValveTime;
             end
             % add bitcode here
             sma = get_matrix(sma, S, io, action);
@@ -191,10 +220,14 @@ for currentTrial = 1:MaxTrials
         
         BpodSystem.ProtocolSettings = S;
         SaveBpodSessionData;
+        SaveProtocolSettings(S);
     end
     
     HandlePauseCondition; % Checks to see if the protocol is paused. If so, waits until user resumes.
     if BpodSystem.Status.BeingUsed == 0
+        fclose(ServoSerial);
+        delete(ServoSerial);
+        clear ServoSerial;
         return
     end
 end
@@ -216,7 +249,7 @@ sma = AddState(sma, 'Name', 'SamplePeriod', ...                         %: Sampl
 sma = AddState(sma, 'Name', 'EarlyLickSample', ...                      %: EarlyLickSample - Play alarm, restart SamplePeriod () after 50 ms
     'Timer', 0.05,...
     'StateChangeConditions', {'Tup', 'SamplePeriod'},...
-    'OutputActions', {});
+    'OutputActions', io.Pole);
 sma = AddState(sma, 'Name', 'DelayPeriod', ...                          %: Delay - Lick either direction and go to EarlyLickDelay (), otherwise go to ResponseCue ().
     'Timer', S.GUI.DelayPeriod,...
     'StateChangeConditions', {'Port1In','EarlyLickDelay', ...
@@ -238,9 +271,13 @@ sma = AddState(sma, 'Name', 'AnswerPeriod', ...                         %: Answe
                               'Tup', 'NoResponse'},...
     'OutputActions', {});
 sma = AddState(sma, 'Name', 'Reward', ...                               %: Reward - Give reward and go to RewardConsumption () after WaterValveTime
-    'Timer', S.GUI.WaterValveTime,...
-    'StateChangeConditions', {'Tup', 'RewardConsumption'},...
+    'Timer', io.ValveTime,...
+    'StateChangeConditions', {'Tup', 'CloseValve'},...
     'OutputActions', io.Reward);
+sma = AddState(sma, 'Name', 'CloseValve', ...                           %: CloseValve
+    'Timer', 0.01,...
+    'StateChangeConditions', {'Tup', 'RewardConsumption'},...
+    'OutputActions', io.WaterOff);
 sma = AddState(sma, 'Name', 'RewardConsumption', ...                    %: RewardConsumption - Go to StopLicking () after ConsumptionPeriodTime
     'Timer', S.GUI.ConsumptionPeriod,...
     'StateChangeConditions', {'Tup', 'ITI'},...

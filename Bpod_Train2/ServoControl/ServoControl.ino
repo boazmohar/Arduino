@@ -44,11 +44,11 @@ int OngoingStop2=0;
 int OngoingSine2=0;
 
 //default params for servo movment
-const float galvoStart=15;
+const float galvoStart=30;
 const float centerRight = 60;
-const float ampRight = 15;
+const float ampRight = 30;
 const float centerLeft = 30;
-const float ampLeft = 10;
+const float ampLeft = 30;
 const float freq = 10;
 
 // params for controling the movemnt

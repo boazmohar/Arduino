@@ -44,18 +44,18 @@ int OngoingStop2=0;
 int OngoingSine2=0;
 
 //default params for servo movment
-const float galvoStart=50;
-const float centerRight = 85;
-const float ampRight = 7;
-const float centerLeft = 67;
-const float ampLeft = 7;
-const float freq = 10;
+const float galvoStart=55;
+const float centerRight = 90;
+const float ampRight = 10;
+const float centerLeft = 55;
+const float ampLeft = 8;
+const float freq = 8;
 
 // params for controling the movemnt
 float sineCenter=10;
 float sineCenter2=10;
-float sineAmp=ampRight;
-float sineAmp2=ampLeft;
+float sineAmp=15;
+float sineAmp2=0;
 float y = 0;
 unsigned long x;
 unsigned long startT;
@@ -86,7 +86,7 @@ void setup() {
   pinMode(BeepPin,OUTPUT);
   digitalWrite(BeepPin,LOW);
   attachInterrupt(digitalPinToInterrupt(StimPin), StimCall, CHANGE);
-  linearRate=(sineAmp*10)/(1/freq)/1000000;
+  linearRate=((sineAmp*10)/(1/freq))/10000000;
   period=(1/freq)*1000000;
   delay(300);
 }
@@ -94,9 +94,9 @@ void setup() {
 void loop() {
    if (Serial.available() != 0) {
     nRead=Serial.readBytes(buff,1);
-    if (nRead!=1) {
-      return;
-    }
+    //if (nRead!=1) {
+    //  return;
+    //}
     if (buff[0]==1) {
       trialType=1;
     }
@@ -134,12 +134,14 @@ void loop() {
      startTBeep=micros();
      OngoingBeep=1;
      digitalWrite(BeepPin,HIGH);
+     Serial.println("High");
    }
    
    if (OngoingBeep) {
      if ((micros()-startTBeep)>beepDur) {
        digitalWrite(BeepPin,LOW);
        OngoingBeep=0;
+       Serial.println("low");
      }  
    }  
   // move the main motor
