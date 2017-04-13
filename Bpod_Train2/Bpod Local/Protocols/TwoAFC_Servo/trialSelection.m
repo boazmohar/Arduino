@@ -74,7 +74,7 @@ switch S.GUI.TrialType
                         newNoTrialProb = NoTrialProb;
                     end
                     if MaxSame > Data.nTrials
-                        if rand(1)<=newNoTrialProp
+                        if rand(1)<=newNoTrialProb
                             next_trial = 1;
                         else
                             next_trial = 0;
